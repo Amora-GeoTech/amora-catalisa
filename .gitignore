@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.env
+
+# Node
+node_modules/
+
+# MkDocs build
+/site/
+
+# OS
+.DS_Store
+
+# Reports outputs
+reports/*.pdf
+reports/*.docx
+
+# VSCode
+.vscode/

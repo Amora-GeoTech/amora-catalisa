@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "Se usar este repositório, por favor cite."
+title: "AMORA Geotech Solutions — Catalisa ICT"
+authors:
+  - family-names: "Silveira"
+    given-names: "João Rafael B. S."
+    affiliation: "UFPA"
+date-released: "2025-10-13"
+version: "0.1.0"
+url: "https://github.com/Amora-GeoTech/amora-catalisa"
