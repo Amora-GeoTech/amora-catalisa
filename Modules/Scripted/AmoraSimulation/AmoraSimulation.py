@@ -242,6 +242,59 @@ class AmoraSimulationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.loadResultBtn.clicked.connect(self.onLoadResult)
         runLayout.addWidget(self.loadResultBtn)
 
+        # --- Flow Visualization ---
+        vizCollapsible = ctk.ctkCollapsibleButton()
+        vizCollapsible.text = "Flow Visualization"
+        self.layout.addWidget(vizCollapsible)
+        vizLayout = qt.QVBoxLayout(vizCollapsible)
+
+        vizDesc = qt.QLabel(
+            "Animate velocity field over time using saved snapshots."
+        )
+        vizDesc.setStyleSheet("color: #94a3b8; font-size: 11px; padding: 4px;")
+        vizDesc.setWordWrap(True)
+        vizLayout.addWidget(vizDesc)
+
+        # Playback controls
+        playRow = qt.QHBoxLayout()
+        self.playBtn = qt.QPushButton("Play")
+        self.playBtn.clicked.connect(self.onPlayAnimation)
+        playRow.addWidget(self.playBtn)
+
+        self.pauseBtn = qt.QPushButton("Pause")
+        self.pauseBtn.setEnabled(False)
+        self.pauseBtn.clicked.connect(self.onPauseAnimation)
+        playRow.addWidget(self.pauseBtn)
+
+        self.fpsLabel = qt.QLabel("FPS:")
+        playRow.addWidget(self.fpsLabel)
+        self.fpsSpin = qt.QSpinBox()
+        self.fpsSpin.setRange(1, 30)
+        self.fpsSpin.setValue(5)
+        playRow.addWidget(self.fpsSpin)
+        vizLayout.addLayout(playRow)
+
+        # Frame slider
+        sliderRow = qt.QHBoxLayout()
+        self.frameLabel = qt.QLabel("Frame: 0/0")
+        sliderRow.addWidget(self.frameLabel)
+        self.frameSlider = qt.QSlider(qt.Qt.Horizontal)
+        self.frameSlider.setRange(0, 0)
+        self.frameSlider.valueChanged.connect(self._onFrameChanged)
+        sliderRow.addWidget(self.frameSlider)
+        vizLayout.addLayout(sliderRow)
+
+        # Export video
+        self.exportVideoBtn = qt.QPushButton("Export Video (MP4)")
+        self.exportVideoBtn.clicked.connect(self.onExportVideo)
+        vizLayout.addWidget(self.exportVideoBtn)
+
+        # Animation state
+        self._animTimer = qt.QTimer()
+        self._animTimer.timeout.connect(self._onAnimTick)
+        self._vizFrames = []
+        self._vizNode = None
+
         # --- Permeability ---
         permCollapsible = ctk.ctkCollapsibleButton()
         permCollapsible.text = "Results / Permeability"
@@ -515,7 +568,7 @@ class AmoraSimulationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     def onRunSimulation(self):
         tmp = Path(tempfile.gettempdir())
-        is_grayscale = self.grayscaleCheck.isChecked
+        is_grayscale = self.grayscaleCheck.checked
 
         # Check geometry source
         geoIdx = self.geoSourceCombo.currentIndex
@@ -611,13 +664,9 @@ class AmoraSimulationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             )
             return
 
-        # Find latest velocity file
         npy_files = sorted(tmp.glob("velocity_magnitude_*.npy"))
         if not npy_files:
-            slicer.util.warningDisplay(
-                "No velocity result files found.",
-                windowTitle="AMORA",
-            )
+            slicer.util.warningDisplay("No velocity result files found.", windowTitle="AMORA")
             return
 
         latest = npy_files[-1]
@@ -627,12 +676,10 @@ class AmoraSimulationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             slicer.app.setOverrideCursor(qt.Qt.WaitCursor)
             arr = np.load(str(latest))
 
-            # Create volume node
             volumeNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
             volumeNode.SetName(f"LBM_Velocity_{latest.stem}")
             slicer.util.updateVolumeFromArray(volumeNode, arr)
 
-            # Set colormap to a flow-friendly one
             displayNode = volumeNode.GetDisplayNode()
             if displayNode:
                 displayNode.SetAndObserveColorNodeID("vtkMRMLColorTableNodeFileColdToHotRainbow.txt")
@@ -643,6 +690,191 @@ class AmoraSimulationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 f"<span style='color:#22c55e;'>[LOADED] {latest.name} "
                 f"({arr.shape}) into Slicer</span>"
             )
+        except Exception as e:
+            self._logAppend(f"<span style='color:#ef4444;'>[ERROR] {e}</span>")
+        finally:
+            slicer.app.restoreOverrideCursor()
+
+    # --- Flow Visualization ---
+
+    def _loadVizFrames(self):
+        """Discover all saved velocity magnitude snapshots."""
+        tmp = Path(tempfile.gettempdir()) / "lbm_results"
+        if not tmp.exists():
+            return []
+        return sorted(tmp.glob("velocity_magnitude_*.npy"))
+
+    def _ensureVizNode(self, arr):
+        """Create or reuse volume node for animation playback."""
+        if self._vizNode is None or slicer.mrmlScene.GetNodeByID(
+            self._vizNode.GetID() if self._vizNode else ""
+        ) is None:
+            self._vizNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
+            self._vizNode.SetName("LBM_FlowAnimation")
+
+        slicer.util.updateVolumeFromArray(self._vizNode, arr)
+
+        displayNode = self._vizNode.GetDisplayNode()
+        if displayNode:
+            displayNode.SetAndObserveColorNodeID(
+                "vtkMRMLColorTableNodeFileColdToHotRainbow.txt"
+            )
+            # Use fixed W/L across all frames for consistent color mapping
+            if not hasattr(self, '_vizWL'):
+                displayNode.SetAutoWindowLevel(True)
+                self._vizWL = (displayNode.GetWindow(), displayNode.GetLevel())
+            else:
+                displayNode.SetAutoWindowLevel(False)
+                displayNode.SetWindow(self._vizWL[0])
+                displayNode.SetLevel(self._vizWL[1])
+
+        slicer.util.setSliceViewerLayers(background=self._vizNode)
+        return self._vizNode
+
+    def _showFrame(self, idx):
+        """Load and display frame at index idx."""
+        if idx < 0 or idx >= len(self._vizFrames):
+            return
+        arr = np.load(str(self._vizFrames[idx]))
+        self._ensureVizNode(arr)
+        self.frameLabel.setText(f"Frame: {idx + 1}/{len(self._vizFrames)}")
+
+    def _onFrameChanged(self, val):
+        """Slider moved manually."""
+        if self._vizFrames:
+            self._showFrame(val)
+
+    def onPlayAnimation(self):
+        """Start playback of velocity snapshots."""
+        self._vizFrames = self._loadVizFrames()
+        if not self._vizFrames:
+            slicer.util.warningDisplay(
+                "No simulation snapshots found.\nRun a simulation first.",
+                windowTitle="AMORA",
+            )
+            return
+
+        self._vizWL = None  # Reset W/L on first frame
+        self.frameSlider.setRange(0, len(self._vizFrames) - 1)
+        self.frameSlider.setValue(0)
+        self._showFrame(0)
+
+        interval_ms = int(1000.0 / self.fpsSpin.value)
+        self._animTimer.start(interval_ms)
+        self.playBtn.setEnabled(False)
+        self.pauseBtn.setEnabled(True)
+        self._logAppend(
+            f"[PLAY] Animating {len(self._vizFrames)} frames at {self.fpsSpin.value} FPS"
+        )
+
+    def onPauseAnimation(self):
+        """Pause playback."""
+        self._animTimer.stop()
+        self.playBtn.setEnabled(True)
+        self.pauseBtn.setEnabled(False)
+
+    def _onAnimTick(self):
+        """Advance to next frame."""
+        idx = self.frameSlider.value + 1
+        if idx >= len(self._vizFrames):
+            idx = 0  # Loop
+        self.frameSlider.setValue(idx)
+
+    def onExportVideo(self):
+        """Export animation frames as MP4 video with slice montage."""
+        self._vizFrames = self._loadVizFrames()
+        if not self._vizFrames:
+            slicer.util.warningDisplay(
+                "No simulation snapshots found.\nRun a simulation first.",
+                windowTitle="AMORA",
+            )
+            return
+
+        # Ask user for save path
+        savePath = qt.QFileDialog.getSaveFileName(
+            slicer.util.mainWindow(),
+            "Save Flow Animation",
+            str(Path.home() / "lbm_flow.mp4"),
+            "MP4 Video (*.mp4);;GIF Animation (*.gif)",
+        )
+        if not savePath:
+            return
+
+        self._logAppend(f"[EXPORT] Rendering {len(self._vizFrames)} frames...")
+        slicer.app.setOverrideCursor(qt.Qt.WaitCursor)
+
+        try:
+            from PIL import Image
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+            import matplotlib.cm as cm
+
+            frames_pil = []
+            # Get global min/max for consistent colormap
+            sample = np.load(str(self._vizFrames[0]))
+            vmin_global = 0.0
+            vmax_global = 0.0
+            for f in self._vizFrames:
+                arr = np.load(str(f))
+                vmax_global = max(vmax_global, float(arr.max()))
+
+            nz = sample.shape[0]
+            # Pick 3 representative slices: 25%, 50%, 75% through volume
+            slice_indices = [nz // 4, nz // 2, 3 * nz // 4]
+
+            for fi, fpath in enumerate(self._vizFrames):
+                arr = np.load(str(fpath))
+
+                fig, axes = plt.subplots(1, 3, figsize=(12, 4), dpi=100)
+                for ax, si in zip(axes, slice_indices):
+                    im = ax.imshow(
+                        arr[si], cmap="inferno",
+                        vmin=vmin_global, vmax=vmax_global,
+                        interpolation="bilinear",
+                    )
+                    ax.set_title(f"Slice Z={si}", fontsize=10)
+                    ax.axis("off")
+
+                fig.suptitle(
+                    f"LBM Velocity Magnitude - Frame {fi + 1}/{len(self._vizFrames)}",
+                    fontsize=12, fontweight="bold",
+                )
+                fig.colorbar(im, ax=axes, shrink=0.8, label="Velocity (LU)")
+                fig.tight_layout()
+
+                # Render to PIL image
+                fig.canvas.draw()
+                w, h = fig.canvas.get_width_height()
+                buf = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8).reshape(h, w, 3)
+                frames_pil.append(Image.fromarray(buf))
+                plt.close(fig)
+
+            if not frames_pil:
+                self._logAppend("<span style='color:#ef4444;'>[ERROR] No frames rendered</span>")
+                return
+
+            if savePath.endswith(".gif"):
+                frames_pil[0].save(
+                    savePath, save_all=True, append_images=frames_pil[1:],
+                    duration=int(1000 / self.fpsSpin.value), loop=0,
+                )
+            else:
+                # MP4 via imageio
+                try:
+                    import imageio
+                except ImportError:
+                    slicer.util.pip_install("imageio[ffmpeg]")
+                    import imageio
+                writer = imageio.get_writer(savePath, fps=self.fpsSpin.value)
+                for frame in frames_pil:
+                    writer.append_data(np.array(frame))
+                writer.close()
+
+            self._logAppend(
+                f"<span style='color:#22c55e;'>[DONE] Exported to {savePath}</span>"
+            )
+
         except Exception as e:
             self._logAppend(f"<span style='color:#ef4444;'>[ERROR] {e}</span>")
         finally:

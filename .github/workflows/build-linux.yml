@@ -62,6 +62,7 @@ jobs:
             libqt5opengl5-dev \
             libqt5x11extras5-dev \
             libqt5sql5-sqlite \
+            qtbase5-private-dev \
             libxt-dev \
             libgl1-mesa-dev \
             libglu1-mesa-dev \
