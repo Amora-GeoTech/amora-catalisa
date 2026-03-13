@@ -61,6 +61,7 @@ jobs:
             libqt5xmlpatterns5-dev \
             libqt5opengl5-dev \
             libqt5x11extras5-dev \
+            libqt5sql5-sqlite \
             libxt-dev \
             libgl1-mesa-dev \
             libglu1-mesa-dev \
@@ -84,6 +85,8 @@ jobs:
             -DSlicer_BUILD_DOCUMENTATION:BOOL=OFF \
             -DSlicer_BUILD_APPLICATIONUPDATE_SUPPORT:BOOL=OFF \
             -DSlicer_BUILD_EXTENSIONMANAGER_SUPPORT:BOOL=OFF \
+            -DSlicer_BUILD_WEBENGINE_SUPPORT:BOOL=OFF \
+            -DSlicer_BUILD_MULTIMEDIA_SUPPORT:BOOL=OFF \
             ${{ github.workspace }}
 
       - name: Build superbuild (external projects)
