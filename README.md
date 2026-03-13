@@ -1,6 +1,6 @@
-# AmoraDigitalRock by LPSA/UFPA - Laboratorio de Petrossismica Sustentavel da Amazonia
+# AmoraDigitalRock by LPSA/UFPA - Laboratório de Petrossísmica Sustentável da Amazônia
 
-Digital Rock Analysis Platform based on 3D Slicer
+Digital Rock Analysis Platform 
 
 _This project is in active development and may change from version to version without notice,_
 
@@ -19,4 +19,4 @@ _List key features_
 - [Building on Windows](BUILD_WINDOWS.md)
 - [Building on Linux](BUILD_LINUX.md)
 
-![AmoraDigitalRock by LPSA/UFPA - Laboratorio de Petrossismica Sustentavel da Amazonia](Applications/AmoraDigitalRockApp/Resources/Images/LogoFull.png?raw=true)
+![AmoraDigitalRock by LPSA/UFPA - Laboratório de Petrossísmica Sustentável da Amazônia](Applications/AmoraDigitalRockApp/Resources/Images/LogoFull.png?raw=true)

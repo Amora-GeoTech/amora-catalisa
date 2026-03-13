@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MRML>
+  <!-- ================================================================== -->
+  <!-- AMORA Digital Rock - Volume Rendering Presets                       -->
+  <!-- Designed for microCT and CT rock sample analysis                   -->
+  <!-- ================================================================== -->
+
+  <!-- Berea Low Res 500um: optimized for Berea sandstone at 500um voxel size.
+       Highlights pore space (dark) vs grain matrix (bright). Typical 16-bit range. -->
+  <VolumeProperty selected="false" hideFromEditors="false" name="Berea Low Res 500um" gradientOpacity="4 0 1 65535 1" userTags="" specularPower="10" scalarOpacity="14 0 0 5000 0 8000 0.02 15000 0.05 25000 0.4 40000 0.7 65535 0.8" id="vtkMRMLVolumePropertyNode1" specular="0.2" shade="1" ambient="0.15" colorTransfer="28 0 0 0 0 5000 0.05 0.05 0.15 8000 0.15 0.12 0.08 15000 0.55 0.45 0.35 25000 0.78 0.70 0.58 40000 0.92 0.88 0.80 65535 1 1 1" selectable="true" diffuse="0.8" interpolation="1" effectiveRange="5000 40000"/>
+
+  <!-- General Sandstone: broad preset for sandstone samples (quartz grains, clay, pores).
+       Good starting point for most sandstone microCT data. -->
+  <VolumeProperty selected="false" hideFromEditors="false" name="General Sandstone" gradientOpacity="4 0 1 65535 1" userTags="" specularPower="10" scalarOpacity="12 0 0 3000 0 6000 0.01 18000 0.15 35000 0.55 65535 0.7" id="vtkMRMLVolumePropertyNode2" specular="0.15" shade="1" ambient="0.15" colorTransfer="24 0 0 0 0 3000 0.02 0.02 0.05 6000 0.35 0.25 0.15 18000 0.72 0.62 0.48 35000 0.90 0.85 0.75 65535 1 1 1" selectable="true" diffuse="0.85" interpolation="1" effectiveRange="3000 35000"/>
+
+  <!-- Carbonate: optimized for carbonate rocks (limestone, dolomite).
+       Higher density matrix, micro-porosity. Warmer tones for mineral distinction. -->
+  <VolumeProperty selected="false" hideFromEditors="false" name="Carbonate" gradientOpacity="4 0 1 65535 1" userTags="" specularPower="15" scalarOpacity="12 0 0 4000 0 8000 0.02 20000 0.2 38000 0.6 65535 0.75" id="vtkMRMLVolumePropertyNode3" specular="0.25" shade="1" ambient="0.12" colorTransfer="24 0 0 0 0 4000 0.03 0.03 0.08 8000 0.40 0.30 0.18 20000 0.82 0.72 0.55 38000 0.95 0.90 0.82 65535 1 1 0.95" selectable="true" diffuse="0.8" interpolation="1" effectiveRange="4000 38000"/>
+
+  <!-- Saturated Rock: for fluid-saturated rock samples (brine, oil).
+       Emphasizes density contrast between dry matrix, pore fluid, and grains.
+       Blue tones for fluid-filled pores, warm for grains. -->
+  <VolumeProperty selected="false" hideFromEditors="false" name="Saturated Rock" gradientOpacity="4 0 1 65535 1" userTags="" specularPower="10" scalarOpacity="14 0 0 2000 0 5000 0.03 10000 0.12 18000 0.25 30000 0.5 65535 0.7" id="vtkMRMLVolumePropertyNode4" specular="0.2" shade="1" ambient="0.15" colorTransfer="28 0 0 0 0 2000 0.0 0.0 0.1 5000 0.1 0.2 0.6 10000 0.2 0.5 0.8 18000 0.6 0.5 0.35 30000 0.85 0.78 0.65 65535 1 1 1" selectable="true" diffuse="0.8" interpolation="1" effectiveRange="2000 30000"/>
+
+  <!-- Pore Space: isolates pore space (low-density voxels) making them visible,
+       while making the solid matrix mostly transparent. -->
+  <VolumeProperty selected="false" hideFromEditors="false" name="Pore Space" gradientOpacity="4 0 1 65535 1" userTags="" specularPower="10" scalarOpacity="12 0 0.6 5000 0.5 10000 0.15 15000 0.02 25000 0 65535 0" id="vtkMRMLVolumePropertyNode5" specular="0.1" shade="1" ambient="0.2" colorTransfer="24 0 0.0 0.0 0.4 5000 0.1 0.2 0.8 10000 0.3 0.5 0.9 15000 0.5 0.5 0.5 25000 0.8 0.8 0.8 65535 1 1 1" selectable="true" diffuse="0.8" interpolation="1" effectiveRange="0 15000"/>
+
+  <!-- Rock MIP: Maximum Intensity Projection style for rock samples.
+       Good for quick overview of sample structure and density variations. -->
+  <VolumeProperty selected="false" hideFromEditors="false" name="Rock MIP" gradientOpacity="4 0 1 65535 1" userTags="" specularPower="10" scalarOpacity="8 0 0 3000 0 15000 0.05 65535 0.05" id="vtkMRMLVolumePropertyNode6" specular="0.0" shade="0" ambient="0.2" colorTransfer="8 0 1 1 1 65535 1 1 1" selectable="true" diffuse="1" interpolation="1" effectiveRange="3000 65535"/>
+
+  <!-- Grain Structure: highlights individual grains by making pore space
+       transparent and emphasizing grain boundaries via gradient opacity. -->
+  <VolumeProperty selected="false" hideFromEditors="false" name="Grain Structure" gradientOpacity="8 0 0 500 0.1 3000 1 65535 1" userTags="" specularPower="20" scalarOpacity="10 0 0 8000 0 12000 0.3 30000 0.6 65535 0.65" id="vtkMRMLVolumePropertyNode7" specular="0.3" shade="1" ambient="0.1" colorTransfer="20 0 0 0 0 8000 0.1 0.1 0.1 12000 0.65 0.55 0.40 30000 0.90 0.85 0.75 65535 1 1 1" selectable="true" diffuse="0.8" interpolation="1" effectiveRange="8000 30000"/>
+
+  <!-- Rock 8-bit: preset for 8-bit (0-255) microCT rock data. -->
+  <VolumeProperty selected="false" hideFromEditors="false" name="Rock 8-bit" gradientOpacity="4 0 1 255 1" userTags="" specularPower="10" scalarOpacity="10 0 0 20 0 60 0.1 150 0.45 255 0.6" id="vtkMRMLVolumePropertyNode8" specular="0.15" shade="1" ambient="0.15" colorTransfer="20 0 0 0 0 20 0.05 0.05 0.1 60 0.35 0.28 0.18 150 0.78 0.70 0.58 255 1 1 1" selectable="true" diffuse="0.85" interpolation="1" effectiveRange="20 150"/>
+
+  <!-- Multi-phase: for segmented or multi-mineral samples.
+       Color-codes different density ranges to distinguish mineral phases. -->
+  <VolumeProperty selected="false" hideFromEditors="false" name="Multi-phase Rock" gradientOpacity="4 0 1 65535 1" userTags="" specularPower="10" scalarOpacity="14 0 0 3000 0 5000 0.15 12000 0.3 22000 0.45 35000 0.6 65535 0.7" id="vtkMRMLVolumePropertyNode9" specular="0.2" shade="1" ambient="0.15" colorTransfer="28 0 0 0 0 3000 0 0 0.2 5000 0.2 0.4 0.8 12000 0.2 0.8 0.2 22000 0.9 0.7 0.1 35000 0.9 0.3 0.1 65535 1 1 1" selectable="true" diffuse="0.8" interpolation="1" effectiveRange="3000 35000"/>
+
+  <!-- Dense Sandstone: based on CT-Cardiac TF, remapped to 16-bit rock range.
+       Reveals internal density structure - pores, clay, cemented quartz grains.
+       Warm skin-like tones transition to highlight dense mineral inclusions in red. -->
+  <VolumeProperty selected="false" hideFromEditors="false" name="Dense Sandstone" gradientOpacity="4 0 1 65535 1" userTags="" specularPower="10" scalarOpacity="12 0 0 31680 0 33536 0.285714 34440 0.553571 35315 0.848214 65535 0.875" id="vtkMRMLVolumePropertyNode10" specular="0.2" shade="1" ambient="0.1" colorTransfer="24 0 0 0 0 31680 0.54902 0.25098 0.14902 33536 0.882353 0.603922 0.290196 34440 1 0.937033 0.954531 35315 0.615686 0 0 65535 0.827451 0.658824 1" selectable="true" diffuse="0.9" interpolation="1" effectiveRange="31680 35315"/>
+
+  <!-- Tight Carbonate: based on CT-Cardiac2 TF, remapped to 16-bit rock range.
+       Wider opacity range for low-porosity carbonates. Shows subtle mineral phases
+       transitioning from warm brown through orange/gold to white (dense dolomite). -->
+  <VolumeProperty selected="false" hideFromEditors="false" name="Tight Carbonate" gradientOpacity="4 0 1 65535 1" userTags="" specularPower="10" scalarOpacity="12 0 0 32976 0 34273 0.428571 35500 0.776786 49579 0.754902 65535 0.754902" id="vtkMRMLVolumePropertyNode11" specular="0.2" shade="1" ambient="0.1" colorTransfer="24 0 0 0 0 32976 0.54902 0.25098 0.14902 34273 0.917647 0.639216 0.0588235 35500 1 0.878431 0.623529 49579 1 1 1 65535 0.827451 0.658824 1" selectable="true" diffuse="0.9" interpolation="1" effectiveRange="32976 49579"/>
+
+  <!-- Fluid-Saturated Core: based on CT-Cardiac3 TF, remapped to 16-bit rock range.
+       Multi-color rendering for saturation studies: blue=fluid-filled pores,
+       red=air/gas, pink/white=grain matrix, yellow=cemented zones.
+       Ideal for drainage/imbibition experiments and fluid distribution analysis. -->
+  <VolumeProperty selected="false" hideFromEditors="false" name="Fluid-Saturated Core" gradientOpacity="4 0 1 65535 1" userTags="" specularPower="10" scalarOpacity="14 0 0 31580 0 33003 0.169643 34019 0.589286 36256 0.607143 45677 0.607143 65535 0.616071" id="vtkMRMLVolumePropertyNode12" specular="0.2" shade="1" ambient="0.1" colorTransfer="28 0 0 0 0 31580 0 0.25098 1 33003 1 0 0 34019 1 0.894893 0.894893 36256 1 1 0.25098 45677 1 1 1 65535 0.827451 0.658824 1" selectable="true" diffuse="0.9" interpolation="1" effectiveRange="31580 45677"/>
+
+</MRML>

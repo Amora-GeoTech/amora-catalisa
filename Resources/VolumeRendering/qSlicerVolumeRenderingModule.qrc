@@ -1,0 +1,16 @@
+<!DOCTYPE RCC><RCC version="1.0">
+  <qresource>
+    <file>Icons/VolumeRendering.png</file>
+  </qresource>
+  <qresource prefix="/presets">
+    <file alias="Berea Low Res 500um">Icons/Berea Low Res 500um.png</file>
+    <file alias="General Sandstone">Icons/General Sandstone.png</file>
+    <file alias="Carbonate">Icons/Carbonate.png</file>
+    <file alias="Saturated Rock">Icons/Saturated Rock.png</file>
+    <file alias="Pore Space">Icons/Pore Space.png</file>
+    <file alias="Rock MIP">Icons/Rock MIP.png</file>
+    <file alias="Grain Structure">Icons/Grain Structure.png</file>
+    <file alias="Rock 8-bit">Icons/Rock 8-bit.png</file>
+    <file alias="Multi-phase Rock">Icons/Multi-phase Rock.png</file>
+  </qresource>
+</RCC>

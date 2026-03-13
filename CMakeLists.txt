@@ -146,6 +146,7 @@ set(Slicer_EXTENSION_SOURCE_DIRS
   ${AmoraDigitalRock_SOURCE_DIR}/Modules/Scripted/AmoraDigitalRock
   ${AmoraDigitalRock_SOURCE_DIR}/Modules/Scripted/AmoraProcessing
   ${AmoraDigitalRock_SOURCE_DIR}/Modules/Scripted/AmoraFiltering
+  ${AmoraDigitalRock_SOURCE_DIR}/Modules/Scripted/AmoraSimulation
   )
 
 # Add remote extension source directories

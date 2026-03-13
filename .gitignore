@@ -1,21 +1,28 @@
+# Build
+build/
+_CPack_Packages/
+*.exe
+*.msi
+
 # Python
 __pycache__/
 *.pyc
-.venv/
-.env
+*.pyo
 
-# Node
-node_modules/
-
-# MkDocs build
-/site/
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
 
 # OS
+Thumbs.db
+Desktop.ini
 .DS_Store
 
-# Reports outputs
-reports/*.pdf
-reports/*.docx
+# Claude Code local settings
+.claude/settings.local.json
 
-# VSCode
-.vscode/
+# Temporary
+*.tmp
+*.log
