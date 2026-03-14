@@ -23,21 +23,33 @@ env:
 jobs:
   build-linux:
     runs-on: ubuntu-24.04
-    timeout-minutes: 360  # 6 hours max
+    timeout-minutes: 360
 
     steps:
       - name: Free disk space
         run: |
           echo "=== Before cleanup ==="
           df -h /
-          # Remove large pre-installed packages we don't need
+          free -h
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
           sudo rm -rf /opt/hostedtoolcache
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /usr/share/swift
           sudo apt-get clean
           echo "=== After cleanup ==="
           df -h /
+          free -h
+
+      - name: Setup swap space
+        run: |
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          echo "=== Memory after swap ==="
+          free -h
 
       - name: Checkout AMORA source
         uses: actions/checkout@v4
@@ -93,12 +105,14 @@ jobs:
       - name: Build superbuild (external projects)
         run: |
           cd $BUILD_DIR
-          cmake --build . --config $BUILD_TYPE -- -j$(nproc)
+          # Use -j2 to avoid OOM on GitHub runners (7GB RAM)
+          cmake --build . --config $BUILD_TYPE -- -j2
 
       - name: Build inner Slicer
         run: |
           cd $BUILD_DIR/Slicer-build
-          cmake --build . --config $BUILD_TYPE -- -j$(nproc)
+          # Use -j2 to avoid OOM during heavy C++ compilation
+          cmake --build . --config $BUILD_TYPE -- -j2 2>&1 | tail -100
 
       - name: Create package (tar.gz)
         run: |
