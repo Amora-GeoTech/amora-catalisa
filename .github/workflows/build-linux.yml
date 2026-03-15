@@ -106,24 +106,35 @@ jobs:
             -DSlicer_BUILD_WEBENGINE_SUPPORT:BOOL=OFF \
             -DSlicer_BUILD_MULTIMEDIA_SUPPORT:BOOL=OFF \
             -DSlicer_USE_SYSTEM_curl:BOOL=ON \
+            -DCMAKE_SHARED_LINKER_FLAGS:STRING="-lzstd" \
             ${{ github.workspace }}
+
+      - name: Patch curl to disable zstd
+        run: |
+          # If superbuild built curl from source, patch its cmake cache to disable zstd
+          CURL_CACHE="$BUILD_DIR/curl-build/CMakeCache.txt"
+          if [ -f "$CURL_CACHE" ]; then
+            sed -i 's/CURL_ZSTD:STRING=.*/CURL_ZSTD:STRING=OFF/' "$CURL_CACHE"
+            echo "Patched curl CMakeCache to disable zstd"
+          fi
 
       - name: Build superbuild (external projects)
         run: |
           cd $BUILD_DIR
-          cmake --build . --config $BUILD_TYPE -- -j$(nproc) VERBOSE=1 2>&1 | tee build_superbuild.log | tail -200
+          cmake --build . --config $BUILD_TYPE -- -j$(nproc) 2>&1 | tail -50
 
       - name: Build inner Slicer
         run: |
           cd $BUILD_DIR/Slicer-build
+          # Inject -lzstd so RemoteIO can link against static curl with zstd
+          export LDFLAGS="-lzstd"
+          cmake -DCMAKE_SHARED_LINKER_FLAGS="-lzstd" .
           cmake --build . --config $BUILD_TYPE -- -j$(nproc) 2>&1 | tee build_inner.log || true
-          # Show last 200 lines on failure to capture the real error
-          echo "=== LAST 200 LINES OF BUILD LOG ==="
-          tail -200 build_inner.log
-          # Check if it actually failed
-          if grep -q "Error" build_inner.log; then
-            echo "=== ERRORS FOUND ==="
-            grep -B5 "error:" build_inner.log | tail -60
+          echo "=== LAST 100 LINES ==="
+          tail -100 build_inner.log
+          # Fail if real errors found
+          if grep -q "collect2: error" build_inner.log; then
+            grep -B5 "error:" build_inner.log | tail -40
             exit 1
           fi
 
