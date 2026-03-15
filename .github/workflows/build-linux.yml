@@ -89,7 +89,8 @@ jobs:
             libopenslide-dev \
             libarchive-dev \
             libtbb-dev \
-            libzstd-dev
+            libzstd-dev \
+            libcurl4-openssl-dev
 
       - name: Configure superbuild
         run: |
@@ -104,6 +105,7 @@ jobs:
             -DSlicer_BUILD_EXTENSIONMANAGER_SUPPORT:BOOL=OFF \
             -DSlicer_BUILD_WEBENGINE_SUPPORT:BOOL=OFF \
             -DSlicer_BUILD_MULTIMEDIA_SUPPORT:BOOL=OFF \
+            -DSlicer_USE_SYSTEM_curl:BOOL=ON \
             ${{ github.workspace }}
 
       - name: Build superbuild (external projects)
