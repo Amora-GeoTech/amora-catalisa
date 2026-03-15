@@ -42,13 +42,16 @@ jobs:
           df -h /
           free -h
 
-      - name: Setup swap space
+      - name: Setup extra swap space
         run: |
-          sudo fallocate -l 8G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          echo "=== Memory after swap ==="
+          # Only add swap if none exists yet
+          if ! swapon --show | grep -q /swapfile2; then
+            sudo fallocate -l 4G /swapfile2
+            sudo chmod 600 /swapfile2
+            sudo mkswap /swapfile2
+            sudo swapon /swapfile2
+          fi
+          echo "=== Memory ==="
           free -h
 
       - name: Checkout AMORA source
@@ -105,14 +108,21 @@ jobs:
       - name: Build superbuild (external projects)
         run: |
           cd $BUILD_DIR
-          # Use -j2 to avoid OOM on GitHub runners (7GB RAM)
-          cmake --build . --config $BUILD_TYPE -- -j2
+          cmake --build . --config $BUILD_TYPE -- -j$(nproc) VERBOSE=1 2>&1 | tee build_superbuild.log | tail -200
 
       - name: Build inner Slicer
         run: |
           cd $BUILD_DIR/Slicer-build
-          # Use -j2 to avoid OOM during heavy C++ compilation
-          cmake --build . --config $BUILD_TYPE -- -j2 2>&1 | tail -100
+          cmake --build . --config $BUILD_TYPE -- -j$(nproc) 2>&1 | tee build_inner.log || true
+          # Show last 200 lines on failure to capture the real error
+          echo "=== LAST 200 LINES OF BUILD LOG ==="
+          tail -200 build_inner.log
+          # Check if it actually failed
+          if grep -q "Error" build_inner.log; then
+            echo "=== ERRORS FOUND ==="
+            grep -B5 "error:" build_inner.log | tail -60
+            exit 1
+          fi
 
       - name: Create package (tar.gz)
         run: |
