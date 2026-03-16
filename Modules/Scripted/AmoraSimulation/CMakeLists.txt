@@ -9,6 +9,7 @@ set(MODULE_PYTHON_SCRIPTS
 set(MODULE_PYTHON_RESOURCES
   Resources/Icons/${MODULE_NAME}.png
   Resources/Scripts/lbm_single_phase.py
+  Resources/Scripts/lbm_two_phase.py
   )
 
 #-----------------------------------------------------------------------------

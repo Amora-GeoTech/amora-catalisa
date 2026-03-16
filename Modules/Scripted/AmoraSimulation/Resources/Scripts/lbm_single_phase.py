@@ -244,21 +244,14 @@ class LBM3D_SinglePhase:
         for i in ti.grouped(self.rho):
             if i.x < self.nx and i.y < self.ny and i.z < self.nz:
                 if ti.static(self.grayscale):
-                    # Grayscale: partial bounce-back (Sukop method)
-                    # ns=0 → fully fluid, ns=1 → fully solid
+                    # Grayscale: partial bounce-back (Sukop/Thorne)
+                    # Pull-based scheme (race-free), matching reference:
+                    # F[d][s] = (1-ns_src)*f[src][s] + ns_src*f[d][LR[s]]
+                    # Both terms use ns at the SOURCE node
                     for s in ti.static(range(19)):
-                        ip = self.periodic_index(i + self.e[s])
-                        # Interpolation: f_new = f + ns*(f_bounce - f)
-                        self.F[i][s] = self.f[i][s] + self.ns[i] * (
-                            self.f[i][self.LR[s]] - self.f[i][s]
-                        )
-                    # Propagate fluid part to neighbors
-                    for s in ti.static(range(19)):
-                        ip = self.periodic_index(i + self.e[s])
-                        if self.ns[ip] < 1.0:
-                            self.F[ip][s] = self.f[i][s] + self.ns[i] * (
-                                self.f[i][self.LR[s]] - self.f[i][s]
-                            )
+                        i_source = self.periodic_index(i - self.e[s])
+                        ns_src = self.ns[i_source]
+                        self.F[i][s] = (1.0 - ns_src) * self.f[i_source][s] + ns_src * self.f[i][self.LR[s]]
                 else:
                     # Binary: standard bounce-back
                     if self.solid[i] == 0:
@@ -556,6 +549,10 @@ def main():
     # Output dir
     os.makedirs(args.output_dir, exist_ok=True)
 
+    # Save geometry (ZYX) for visualization overlay
+    geo_zyx = np.ascontiguousarray(np.transpose(geo_xyz, (2, 1, 0)))
+    np.save(os.path.join(args.output_dir, "geometry.npy"), geo_zyx.astype(np.int8))
+
     # Run simulation
     print(f"[LBM] Running {args.timesteps} timesteps...")
     t0 = time.time()
@@ -575,17 +572,24 @@ def main():
             # Velocity magnitude
             v_mag = np.sqrt(v_np[:, :, :, 0]**2 + v_np[:, :, :, 1]**2 + v_np[:, :, :, 2]**2)
 
+            # Mask solid voxels: set velocity to 0 inside solid (pore-only view)
+            pore_mask_xyz = (geo_xyz == 0)
+            v_mag_pore = np.where(pore_mask_xyz, v_mag, 0.0)
+
             # Transpose back to ZYX for Slicer
-            v_mag_zyx = np.ascontiguousarray(np.transpose(v_mag, (2, 1, 0)))
+            v_mag_zyx = np.ascontiguousarray(np.transpose(v_mag_pore, (2, 1, 0)))
 
             # Save
             out_file = os.path.join(args.output_dir, f"velocity_magnitude_{step+1:06d}.npy")
             np.save(out_file, v_mag_zyx.astype(np.float32))
 
-            # Also save velocity components
-            vx_zyx = np.ascontiguousarray(np.transpose(v_np[:, :, :, 0], (2, 1, 0)))
-            vy_zyx = np.ascontiguousarray(np.transpose(v_np[:, :, :, 1], (2, 1, 0)))
-            vz_zyx = np.ascontiguousarray(np.transpose(v_np[:, :, :, 2], (2, 1, 0)))
+            # Also save velocity components (pore-only)
+            vx_zyx = np.ascontiguousarray(np.transpose(
+                np.where(pore_mask_xyz, v_np[:, :, :, 0], 0.0), (2, 1, 0)))
+            vy_zyx = np.ascontiguousarray(np.transpose(
+                np.where(pore_mask_xyz, v_np[:, :, :, 1], 0.0), (2, 1, 0)))
+            vz_zyx = np.ascontiguousarray(np.transpose(
+                np.where(pore_mask_xyz, v_np[:, :, :, 2], 0.0), (2, 1, 0)))
             np.save(os.path.join(args.output_dir, f"vx_{step+1:06d}.npy"), vx_zyx.astype(np.float32))
             np.save(os.path.join(args.output_dir, f"vy_{step+1:06d}.npy"), vy_zyx.astype(np.float32))
             np.save(os.path.join(args.output_dir, f"vz_{step+1:06d}.npy"), vz_zyx.astype(np.float32))

@@ -19,6 +19,7 @@ import numpy as np
 
 import qt
 import ctk
+import vtk
 import slicer
 from slicer.ScriptedLoadableModule import (
     ScriptedLoadableModule,
@@ -125,7 +126,7 @@ class AmoraFiltering(ScriptedLoadableModule):
     def __init__(self, parent: Optional[qt.QWidget]):
         ScriptedLoadableModule.__init__(self, parent)
         self.parent.title = "Filtering"
-        self.parent.categories = ["AMORA"]
+        self.parent.categories = [""]
         self.parent.dependencies = []
         self.parent.contributors = [
             "LPSA/UFPA - Laboratorio de Petrossismica Sustentavel da Amazonia",
@@ -207,6 +208,17 @@ class AmoraFilteringWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             "When unchecked, filter stacks on top of previously filtered data."
         )
         actionsLayout.addWidget(self.chkFromRaw)
+
+        self.chkAutoLoad = qt.QCheckBox("Auto-load result into Slicer")
+        self.chkAutoLoad.checked = True
+        actionsLayout.addWidget(self.chkAutoLoad)
+
+        saveFolderLayout = qt.QFormLayout()
+        self.filterSavePath = ctk.ctkPathLineEdit()
+        self.filterSavePath.filters = ctk.ctkPathLineEdit.Dirs
+        self.filterSavePath.setToolTip("Select folder to save filtered volume (leave empty for temp dir)")
+        saveFolderLayout.addRow("Save folder:", self.filterSavePath)
+        actionsLayout.addLayout(saveFolderLayout)
 
         self.btnApply = qt.QPushButton("Apply Filter")
         self.btnApply.setStyleSheet("""
@@ -400,11 +412,62 @@ class AmoraFilteringWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             if hasattr(self, '_currentFilterSummary') and self._currentFilterSummary:
                 self._pipeline_steps.append({"name": self._currentFilterSummary})
                 self._updatePipelineLabel()
+            # Auto-load filtered result into Slicer
+            if not getattr(self, '_isReset', False):
+                self._autoLoadFilterResult()
         else:
             self._logAppend(
                 f"<span style='color:#f59e0b;'>[DONE] Exit code {exitCode}</span>"
             )
+        self._isReset = False
         self._setButtonsEnabled(True)
+
+    def _autoLoadFilterResult(self):
+        """Load filtered result into Slicer and optionally copy to save folder."""
+        filtPath = Path(tempfile.gettempdir()) / "_tensor_filtered.npy"
+        if not filtPath.exists():
+            return
+
+        # Copy to save folder if specified
+        saveFolder = self.filterSavePath.currentPath
+        if saveFolder and os.path.isdir(saveFolder):
+            import shutil
+            filterKey = FILTER_ORDER[self.comboFilter.currentIndex]
+            destFile = os.path.join(saveFolder, f"filtered_{filterKey}.npy")
+            shutil.copy2(str(filtPath), destFile)
+            self._logAppend(
+                f"<span style='color:#22c55e;'>[SAVED] {destFile}</span>"
+            )
+
+        if not self.chkAutoLoad.checked:
+            return
+
+        try:
+            arr = np.load(str(filtPath))
+            filterKey = FILTER_ORDER[self.comboFilter.currentIndex]
+            nodeName = f"Filtered_{FILTER_DEFS[filterKey]['label'].replace(' ', '_')}"
+
+            volumeNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
+            volumeNode.SetName(nodeName)
+            slicer.util.updateVolumeFromArray(volumeNode, arr)
+
+            # Copy geometry from original volume
+            origNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
+            if origNode and origNode != volumeNode:
+                volumeNode.SetOrigin(origNode.GetOrigin())
+                volumeNode.SetSpacing(origNode.GetSpacing())
+                ijkToRas = vtk.vtkMatrix4x4()
+                origNode.GetIJKToRASMatrix(ijkToRas)
+                volumeNode.SetIJKToRASMatrix(ijkToRas)
+
+            slicer.util.setSliceViewerLayers(background=volumeNode)
+            slicer.util.resetSliceViews()
+            self._logAppend(
+                f"<span style='color:#22c55e;'>[LOADED] {nodeName} "
+                f"({arr.shape}) into Slicer</span>"
+            )
+        except Exception as e:
+            self._logAppend(f"<span style='color:#ef4444;'>[ERROR] Auto-load: {e}</span>")
 
     def _updatePipelineLabel(self):
         if not self._pipeline_steps:
@@ -453,6 +516,7 @@ class AmoraFilteringWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     def onResetFilter(self):
         self._logAppend("[RUN] Resetting to raw data...")
         self._currentFilterSummary = None
+        self._isReset = True
         self._pipeline_steps.clear()
         self._updatePipelineLabel()
         self._runScript("apply_filter.py", ["--reset"])

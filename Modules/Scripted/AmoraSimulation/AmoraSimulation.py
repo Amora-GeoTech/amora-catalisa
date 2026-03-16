@@ -38,7 +38,7 @@ class AmoraSimulation(ScriptedLoadableModule):
     def __init__(self, parent: Optional[qt.QWidget]):
         ScriptedLoadableModule.__init__(self, parent)
         self.parent.title = "Simulation"
-        self.parent.categories = ["AMORA"]
+        self.parent.categories = [""]
         self.parent.dependencies = []
         self.parent.contributors = [
             "LPSA/UFPA - Laboratorio de Petrossismica Sustentavel da Amazonia"
@@ -121,6 +121,67 @@ class AmoraSimulationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         )
         geoLayout.addRow("", self.grayscaleCheck)
 
+        # --- Simulation Type ---
+        typeCollapsible = ctk.ctkCollapsibleButton()
+        typeCollapsible.text = "Simulation Type"
+        self.layout.addWidget(typeCollapsible)
+        typeLayout = qt.QFormLayout(typeCollapsible)
+
+        self.simTypeCombo = qt.QComboBox()
+        self.simTypeCombo.addItems([
+            "Single-Phase Flow",
+            "Two-Phase Flow (Color Gradient)",
+        ])
+        self.simTypeCombo.currentIndexChanged.connect(self._onSimTypeChanged)
+        typeLayout.addRow("Type:", self.simTypeCombo)
+
+        # --- Two-Phase Parameters (hidden by default) ---
+        self.twoPhaseWidget = qt.QWidget()
+        tpLayout = qt.QFormLayout(self.twoPhaseWidget)
+        tpLayout.setContentsMargins(0, 0, 0, 0)
+
+        self.niuLiquidSpin = qt.QDoubleSpinBox()
+        self.niuLiquidSpin.setRange(0.001, 1.0)
+        self.niuLiquidSpin.setValue(0.1)
+        self.niuLiquidSpin.setDecimals(4)
+        self.niuLiquidSpin.setSingleStep(0.01)
+        self.niuLiquidSpin.setToolTip("Kinematic viscosity of liquid phase (psi > 0)")
+        tpLayout.addRow("Viscosity liquid:", self.niuLiquidSpin)
+
+        self.niuGasSpin = qt.QDoubleSpinBox()
+        self.niuGasSpin.setRange(0.001, 1.0)
+        self.niuGasSpin.setValue(0.1)
+        self.niuGasSpin.setDecimals(4)
+        self.niuGasSpin.setSingleStep(0.01)
+        self.niuGasSpin.setToolTip("Kinematic viscosity of gas phase (psi < 0)")
+        tpLayout.addRow("Viscosity gas:", self.niuGasSpin)
+
+        self.surfaceTensionSpin = qt.QDoubleSpinBox()
+        self.surfaceTensionSpin.setRange(0.0, 0.1)
+        self.surfaceTensionSpin.setValue(0.005)
+        self.surfaceTensionSpin.setDecimals(4)
+        self.surfaceTensionSpin.setSingleStep(0.001)
+        self.surfaceTensionSpin.setToolTip("Surface tension parameter (CapA)")
+        tpLayout.addRow("Surface tension:", self.surfaceTensionSpin)
+
+        self.psiSolidSpin = qt.QDoubleSpinBox()
+        self.psiSolidSpin.setRange(-1.0, 1.0)
+        self.psiSolidSpin.setValue(0.7)
+        self.psiSolidSpin.setDecimals(2)
+        self.psiSolidSpin.setSingleStep(0.1)
+        self.psiSolidSpin.setToolTip("Wetting parameter at solid surfaces (-1=hydrophilic, 1=hydrophobic)")
+        tpLayout.addRow("Wetting (psi_solid):", self.psiSolidSpin)
+
+        self.phaseInitCombo = qt.QComboBox()
+        self.phaseInitCombo.addItems([
+            "Half-split along flow direction",
+            "Random distribution",
+        ])
+        tpLayout.addRow("Phase init:", self.phaseInitCombo)
+
+        self.twoPhaseWidget.setVisible(False)
+        typeLayout.addRow("", self.twoPhaseWidget)
+
         # --- Simulation Parameters ---
         paramCollapsible = ctk.ctkCollapsibleButton()
         paramCollapsible.text = "Simulation Parameters"
@@ -132,7 +193,7 @@ class AmoraSimulationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.viscositySpin.setValue(0.16667)
         self.viscositySpin.setDecimals(5)
         self.viscositySpin.setSingleStep(0.01)
-        self.viscositySpin.setToolTip("Kinematic viscosity in lattice units (default 1/6)")
+        self.viscositySpin.setToolTip("Kinematic viscosity in lattice units (single-phase, default 1/6)")
         paramLayout.addRow("Viscosity (niu):", self.viscositySpin)
 
         self.timestepsSpin = qt.QSpinBox()
@@ -248,12 +309,30 @@ class AmoraSimulationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.layout.addWidget(vizCollapsible)
         vizLayout = qt.QVBoxLayout(vizCollapsible)
 
-        vizDesc = qt.QLabel(
-            "Animate velocity field over time using saved snapshots."
-        )
-        vizDesc.setStyleSheet("color: #94a3b8; font-size: 11px; padding: 4px;")
-        vizDesc.setWordWrap(True)
-        vizLayout.addWidget(vizDesc)
+        # View mode selection
+        self.vizModeCombo = qt.QComboBox()
+        self.vizModeCombo.addItems([
+            "Internal (slice through Z - see fluid inside)",
+            "External (3D volume rendering - see flow outside)",
+            "Isosurface (3D velocity isosurfaces)",
+        ])
+        vizLayout.addWidget(self.vizModeCombo)
+
+        # Isosurface threshold (fraction of max velocity)
+        isoRow = qt.QHBoxLayout()
+        isoRow.addWidget(qt.QLabel("Iso levels (%):"))
+        self.isoLevelsSpin = qt.QSpinBox()
+        self.isoLevelsSpin.setRange(1, 10)
+        self.isoLevelsSpin.setValue(3)
+        self.isoLevelsSpin.setToolTip("Number of isosurface levels to display")
+        isoRow.addWidget(self.isoLevelsSpin)
+        vizLayout.addLayout(isoRow)
+
+        # Overlay rock structure
+        self.overlayRockCheck = qt.QCheckBox("Overlay rock structure")
+        self.overlayRockCheck.checked = True
+        self.overlayRockCheck.setToolTip("Show rock grains alongside flow field")
+        vizLayout.addWidget(self.overlayRockCheck)
 
         # Playback controls
         playRow = qt.QHBoxLayout()
@@ -294,6 +373,8 @@ class AmoraSimulationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self._animTimer.timeout.connect(self._onAnimTick)
         self._vizFrames = []
         self._vizNode = None
+        self._vizRockNode = None
+        self._vrNode = None
 
         # --- Permeability ---
         permCollapsible = ctk.ctkCollapsibleButton()
@@ -432,6 +513,18 @@ class AmoraSimulationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 f"(Python: {self._systemPython})</span>"
             )
             self.installDepsBtn.setEnabled(True)
+
+    def _onSimTypeChanged(self, idx):
+        """Show/hide two-phase parameters based on simulation type."""
+        is_two_phase = (idx == 1)
+        self.twoPhaseWidget.setVisible(is_two_phase)
+        # Hide single-phase viscosity when two-phase is selected
+        self.viscositySpin.setVisible(not is_two_phase)
+        label = self.viscositySpin.parent().layout().labelForField(self.viscositySpin)
+        if label:
+            label.setVisible(not is_two_phase)
+        # Hide grayscale option for two-phase
+        self.grayscaleCheck.setVisible(not is_two_phase)
 
     def _onBcTypeChanged(self, idx):
         # 0=pressure, 1=velocity, 2=force
@@ -643,10 +736,55 @@ class AmoraSimulationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 "--body-force", str(self.forceSpin.value),
             ])
 
-        self._logAppend("[RUN] Starting LBM simulation...")
-        self._logAppend(f"[INFO] Geometry: {geoPath}")
-        self._logAppend(f"[INFO] Steps: {self.timestepsSpin.value}, niu={self.viscositySpin.value}")
-        self._runScript("lbm_single_phase.py", args)
+        # Determine which solver to use
+        simType = self.simTypeCombo.currentIndex
+        if simType == 1:
+            # Two-Phase Flow
+            # Replace single-phase args with two-phase args
+            args = [
+                "--geometry", geoPath,
+                "--timesteps", str(self.timestepsSpin.value),
+                "--save-interval", str(self.saveIntervalSpin.value),
+                "--backend", self.backendCombo.currentText.split(" ")[0],
+                "--output-dir", str(tmp / "lbm_results"),
+                "--niu-liquid", str(self.niuLiquidSpin.value),
+                "--niu-gas", str(self.niuGasSpin.value),
+                "--surface-tension", str(self.surfaceTensionSpin.value),
+                "--psi-solid", str(self.psiSolidSpin.value),
+                "--flow-direction", flowDir,
+            ]
+            # Phase init
+            phaseIdx = self.phaseInitCombo.currentIndex
+            if phaseIdx == 0:
+                args.extend(["--phase-init", "half"])
+            else:
+                args.extend(["--phase-init", "random"])
+            # Solid convention
+            if self.solidValueCombo.currentIndex == 1:
+                args.append("--invert-solid")
+            # BC type
+            if bcIdx == 0:
+                args.extend([
+                    "--bc-type", "pressure",
+                    "--rho-inlet", str(self.rhoInSpin.value),
+                    "--rho-outlet", str(self.rhoOutSpin.value),
+                ])
+            else:
+                args.extend([
+                    "--bc-type", "force",
+                    "--body-force", str(self.forceSpin.value),
+                ])
+
+            self._logAppend("[RUN] Starting Two-Phase LBM simulation...")
+            self._logAppend(f"[INFO] Geometry: {geoPath}")
+            self._logAppend(f"[INFO] niu_l={self.niuLiquidSpin.value}, niu_g={self.niuGasSpin.value}, CapA={self.surfaceTensionSpin.value}")
+            self._runScript("lbm_two_phase.py", args)
+        else:
+            # Single-Phase Flow
+            self._logAppend("[RUN] Starting LBM simulation...")
+            self._logAppend(f"[INFO] Geometry: {geoPath}")
+            self._logAppend(f"[INFO] Steps: {self.timestepsSpin.value}, niu={self.viscositySpin.value}")
+            self._runScript("lbm_single_phase.py", args)
 
     def onStopSimulation(self):
         if self._process and self._process.state() != qt.QProcess.NotRunning:
@@ -704,8 +842,56 @@ class AmoraSimulationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             return []
         return sorted(tmp.glob("velocity_magnitude_*.npy"))
 
+    def _loadGeometry(self):
+        """Load the saved geometry for overlay."""
+        geoPath = Path(tempfile.gettempdir()) / "lbm_results" / "geometry.npy"
+        if geoPath.exists():
+            return np.load(str(geoPath))
+        return None
+
+    def _getSourceVolumeSpacing(self):
+        """Get spacing and origin from the source volume node so results align."""
+        # Try to find the original loaded volume
+        for node in slicer.util.getNodesByClass("vtkMRMLScalarVolumeNode"):
+            name = node.GetName()
+            if name and not name.startswith("LBM_"):
+                return node.GetSpacing(), node.GetOrigin()
+        return (1.0, 1.0, 1.0), (0.0, 0.0, 0.0)
+
+    def _applyVolumeGeometry(self, node):
+        """Copy spacing and origin from source volume to result volume."""
+        spacing, origin = self._getSourceVolumeSpacing()
+        node.SetSpacing(*spacing)
+        node.SetOrigin(*origin)
+
+    def _setupRockOverlay(self):
+        """Create/update rock structure volume node for overlay."""
+        if not self.overlayRockCheck.checked:
+            return
+        geo = self._loadGeometry()
+        if geo is None:
+            return
+
+        if self._vizRockNode is None or slicer.mrmlScene.GetNodeByID(
+            self._vizRockNode.GetID() if self._vizRockNode else ""
+        ) is None:
+            self._vizRockNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
+            self._vizRockNode.SetName("LBM_RockStructure")
+
+        # Solid=255, pore=0 for good contrast
+        rock_vis = (geo.astype(np.uint8) * 255)
+        slicer.util.updateVolumeFromArray(self._vizRockNode, rock_vis)
+        self._applyVolumeGeometry(self._vizRockNode)
+
+        displayNode = self._vizRockNode.GetDisplayNode()
+        if displayNode:
+            displayNode.SetAndObserveColorNodeID("vtkMRMLColorTableNodeGrey")
+            displayNode.SetAutoWindowLevel(False)
+            displayNode.SetWindow(255)
+            displayNode.SetLevel(128)
+
     def _ensureVizNode(self, arr):
-        """Create or reuse volume node for animation playback."""
+        """Create or reuse flow volume node for animation playback."""
         if self._vizNode is None or slicer.mrmlScene.GetNodeByID(
             self._vizNode.GetID() if self._vizNode else ""
         ) is None:
@@ -713,23 +899,238 @@ class AmoraSimulationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self._vizNode.SetName("LBM_FlowAnimation")
 
         slicer.util.updateVolumeFromArray(self._vizNode, arr)
+        self._applyVolumeGeometry(self._vizNode)
 
         displayNode = self._vizNode.GetDisplayNode()
         if displayNode:
-            displayNode.SetAndObserveColorNodeID(
-                "vtkMRMLColorTableNodeFileColdToHotRainbow.txt"
-            )
-            # Use fixed W/L across all frames for consistent color mapping
-            if not hasattr(self, '_vizWL'):
+            displayNode.SetAndObserveColorNodeID("vtkMRMLColorTableNodeFileColdToHotRainbow.txt")
+            if not hasattr(self, '_vizWL') or self._vizWL is None:
                 displayNode.SetAutoWindowLevel(True)
+                # Force compute so we can read back
+                displayNode.AutoWindowLevelOff()
+                displayNode.AutoWindowLevelOn()
                 self._vizWL = (displayNode.GetWindow(), displayNode.GetLevel())
             else:
                 displayNode.SetAutoWindowLevel(False)
                 displayNode.SetWindow(self._vizWL[0])
                 displayNode.SetLevel(self._vizWL[1])
 
-        slicer.util.setSliceViewerLayers(background=self._vizNode)
         return self._vizNode
+
+    def _setupInternalView(self):
+        """Internal view: slice viewers showing flow inside the rock."""
+        # Set up foreground (flow) + background (rock) overlay in slice views
+        if self.overlayRockCheck.checked and self._vizRockNode:
+            slicer.util.setSliceViewerLayers(
+                background=self._vizRockNode,
+                foreground=self._vizNode,
+                foregroundOpacity=0.6,
+            )
+        else:
+            slicer.util.setSliceViewerLayers(background=self._vizNode)
+
+        # Make sure 3D view is hidden for internal mode
+        layoutManager = slicer.app.layoutManager()
+        layoutManager.setLayout(slicer.vtkMRMLLayoutNode.SlicerLayoutThreeOverThreeView)
+
+    def _setupExternalView(self):
+        """External view: 3D volume rendering showing flow around/through rock."""
+        layoutManager = slicer.app.layoutManager()
+        layoutManager.setLayout(slicer.vtkMRMLLayoutNode.SlicerLayoutConventionalWidescreenView)
+
+        # Enable volume rendering for the flow node
+        try:
+            volRenLogic = slicer.modules.volumerendering.logic()
+        except Exception as e:
+            self._logAppend(
+                "<span style='color:#ef4444;'>[ERROR] Volume Rendering module not available. "
+                "A C++ rebuild may be needed: cmake --build C:/W/AR/Slicer-build "
+                "--target qSlicerVolumeRenderingModule --config Release</span>"
+            )
+            # Fallback to internal view
+            self._setupInternalView()
+            return
+
+        # Flow volume rendering
+        if self._vizNode:
+            displayNode = volRenLogic.GetFirstVolumeRenderingDisplayNode(self._vizNode)
+            if displayNode is None:
+                displayNode = volRenLogic.CreateDefaultVolumeRenderingNodes(self._vizNode)
+
+            if displayNode:
+                displayNode.SetVisibility(True)
+
+                # Set transfer function: transparent at 0, colored for flow
+                volPropNode = displayNode.GetVolumePropertyNode()
+                if volPropNode:
+                    volProp = volPropNode.GetVolumeProperty()
+                    # Get data range
+                    arr = slicer.util.arrayFromVolume(self._vizNode)
+                    vmax = float(arr.max()) if arr.max() > 0 else 1.0
+
+                    # Opacity: 0 at zero (transparent), ramp up for flow
+                    otf = volProp.GetScalarOpacity()
+                    otf.RemoveAllPoints()
+                    otf.AddPoint(0.0, 0.0)          # zero velocity = transparent
+                    otf.AddPoint(vmax * 0.01, 0.0)   # near-zero = still transparent
+                    otf.AddPoint(vmax * 0.05, 0.15)   # low flow = slightly visible
+                    otf.AddPoint(vmax * 0.3, 0.4)    # medium flow
+                    otf.AddPoint(vmax, 0.8)           # high flow = opaque
+
+                    # Color: blue (low) -> cyan -> yellow -> red (high)
+                    ctf = volProp.GetRGBTransferFunction()
+                    ctf.RemoveAllPoints()
+                    ctf.AddRGBPoint(0.0, 0.0, 0.0, 0.0)
+                    ctf.AddRGBPoint(vmax * 0.1, 0.0, 0.0, 0.8)    # blue
+                    ctf.AddRGBPoint(vmax * 0.25, 0.0, 0.7, 1.0)   # cyan
+                    ctf.AddRGBPoint(vmax * 0.5, 1.0, 1.0, 0.0)    # yellow
+                    ctf.AddRGBPoint(vmax * 0.75, 1.0, 0.4, 0.0)   # orange
+                    ctf.AddRGBPoint(vmax, 1.0, 0.0, 0.0)          # red
+
+        # Rock volume rendering (semi-transparent gray)
+        if self.overlayRockCheck.checked and self._vizRockNode:
+            rockDisplay = volRenLogic.GetFirstVolumeRenderingDisplayNode(self._vizRockNode)
+            if rockDisplay is None:
+                rockDisplay = volRenLogic.CreateDefaultVolumeRenderingNodes(self._vizRockNode)
+
+            if rockDisplay:
+                rockDisplay.SetVisibility(True)
+                volPropNode = rockDisplay.GetVolumePropertyNode()
+                if volPropNode:
+                    volProp = volPropNode.GetVolumeProperty()
+                    otf = volProp.GetScalarOpacity()
+                    otf.RemoveAllPoints()
+                    otf.AddPoint(0, 0.0)       # pore = transparent
+                    otf.AddPoint(127, 0.0)
+                    otf.AddPoint(128, 0.08)    # solid = slightly visible
+                    otf.AddPoint(255, 0.12)
+
+                    ctf = volProp.GetRGBTransferFunction()
+                    ctf.RemoveAllPoints()
+                    ctf.AddRGBPoint(0, 0.0, 0.0, 0.0)
+                    ctf.AddRGBPoint(255, 0.7, 0.7, 0.7)  # light gray
+
+    def _setupIsosurfaceView(self):
+        """Isosurface view: 3D contour surfaces of velocity magnitude (like Paraview)."""
+        import vtk
+
+        layoutManager = slicer.app.layoutManager()
+        layoutManager.setLayout(slicer.vtkMRMLLayoutNode.SlicerLayoutConventionalWidescreenView)
+
+        arr = slicer.util.arrayFromVolume(self._vizNode)
+        vmax = float(arr.max()) if arr.max() > 0 else 1.0
+
+        # Clean up previous isosurface models
+        for oldNode in slicer.util.getNodesByClass("vtkMRMLModelNode"):
+            if oldNode.GetName().startswith("LBM_Iso_"):
+                slicer.mrmlScene.RemoveNode(oldNode)
+
+        # Get spacing from source volume
+        spacing, origin = self._getSourceVolumeSpacing()
+
+        # Create VTK image data from numpy array
+        imageData = vtk.vtkImageData()
+        dims = arr.shape  # ZYX
+        imageData.SetDimensions(dims[2], dims[1], dims[0])
+        imageData.SetSpacing(spacing[0], spacing[1], spacing[2])
+        imageData.SetOrigin(origin[0], origin[1], origin[2])
+
+        from vtk.util.numpy_support import numpy_to_vtk
+        flat = arr.flatten(order='C').astype(np.float32)
+        vtkArr = numpy_to_vtk(flat, deep=True)
+        vtkArr.SetName("velocity")
+        imageData.GetPointData().SetScalars(vtkArr)
+
+        # Color map: blue -> cyan -> yellow -> red
+        nLevels = self.isoLevelsSpin.value
+        colors = []
+        for i in range(nLevels):
+            t = (i + 1) / (nLevels + 1)
+            if t < 0.33:
+                r, g, b = 0.0, t / 0.33, 1.0
+            elif t < 0.66:
+                r, g, b = (t - 0.33) / 0.33, 1.0, 1.0 - (t - 0.33) / 0.33
+            else:
+                r, g, b = 1.0, 1.0 - (t - 0.66) / 0.34, 0.0
+            colors.append((r, g, b))
+
+        # Create isosurfaces at different velocity levels
+        for i in range(nLevels):
+            frac = (i + 1) / (nLevels + 1)
+            isoValue = vmax * frac
+
+            contour = vtk.vtkContourFilter()
+            contour.SetInputData(imageData)
+            contour.SetValue(0, isoValue)
+            contour.Update()
+
+            if contour.GetOutput().GetNumberOfCells() == 0:
+                continue
+
+            # Smooth the isosurface
+            smoother = vtk.vtkWindowedSincPolyDataFilter()
+            smoother.SetInputConnection(contour.GetOutputPort())
+            smoother.SetNumberOfIterations(15)
+            smoother.BoundarySmoothingOff()
+            smoother.FeatureEdgeSmoothingOff()
+            smoother.SetPassBand(0.1)
+            smoother.NonManifoldSmoothingOn()
+            smoother.NormalizeCoordinatesOn()
+            smoother.Update()
+
+            normals = vtk.vtkPolyDataNormals()
+            normals.SetInputConnection(smoother.GetOutputPort())
+            normals.ComputePointNormalsOn()
+            normals.Update()
+
+            # Create model node in Slicer
+            modelNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode")
+            modelNode.SetName(f"LBM_Iso_{i}_{isoValue:.4f}")
+            modelNode.SetAndObservePolyData(normals.GetOutput())
+            modelNode.CreateDefaultDisplayNodes()
+
+            displayNode = modelNode.GetDisplayNode()
+            r, g, b = colors[i]
+            displayNode.SetColor(r, g, b)
+            displayNode.SetOpacity(0.6 if nLevels > 1 else 0.8)
+            displayNode.SetEdgeVisibility(False)
+            displayNode.SetBackfaceCulling(True)
+
+        # Also show rock as semi-transparent model if enabled
+        if self.overlayRockCheck.checked and self._vizRockNode:
+            geo = self._loadGeometry()
+            if geo is not None:
+                # Clean old rock iso
+                for oldNode in slicer.util.getNodesByClass("vtkMRMLModelNode"):
+                    if oldNode.GetName() == "LBM_Iso_Rock":
+                        slicer.mrmlScene.RemoveNode(oldNode)
+
+                geoImage = vtk.vtkImageData()
+                geoImage.SetDimensions(dims[2], dims[1], dims[0])
+                geoImage.SetSpacing(spacing[0], spacing[1], spacing[2])
+                geoImage.SetOrigin(origin[0], origin[1], origin[2])
+
+                geoFlat = geo.flatten(order='C').astype(np.float32)
+                geoVtk = numpy_to_vtk(geoFlat, deep=True)
+                geoVtk.SetName("solid")
+                geoImage.GetPointData().SetScalars(geoVtk)
+
+                rockContour = vtk.vtkContourFilter()
+                rockContour.SetInputData(geoImage)
+                rockContour.SetValue(0, 0.5)  # solid boundary
+                rockContour.Update()
+
+                if rockContour.GetOutput().GetNumberOfCells() > 0:
+                    rockModel = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode")
+                    rockModel.SetName("LBM_Iso_Rock")
+                    rockModel.SetAndObservePolyData(rockContour.GetOutput())
+                    rockModel.CreateDefaultDisplayNodes()
+                    rockDisp = rockModel.GetDisplayNode()
+                    rockDisp.SetColor(0.75, 0.7, 0.65)  # sandstone color
+                    rockDisp.SetOpacity(0.15)
+                    rockDisp.SetBackfaceCulling(False)
+
+        self._logAppend(f"[VIZ] Isosurface view: {nLevels} levels, vmax={vmax:.6f}")
 
     def _showFrame(self, idx):
         """Load and display frame at index idx."""
@@ -738,6 +1139,14 @@ class AmoraSimulationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         arr = np.load(str(self._vizFrames[idx]))
         self._ensureVizNode(arr)
         self.frameLabel.setText(f"Frame: {idx + 1}/{len(self._vizFrames)}")
+
+        vizMode = self.vizModeCombo.currentIndex
+        if vizMode == 0:
+            self._setupInternalView()
+        elif vizMode == 1:
+            self._setupExternalView()
+        else:
+            self._setupIsosurfaceView()
 
     def _onFrameChanged(self, val):
         """Slider moved manually."""
@@ -755,6 +1164,7 @@ class AmoraSimulationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             return
 
         self._vizWL = None  # Reset W/L on first frame
+        self._setupRockOverlay()
         self.frameSlider.setRange(0, len(self._vizFrames) - 1)
         self.frameSlider.setValue(0)
         self._showFrame(0)
@@ -781,7 +1191,7 @@ class AmoraSimulationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.frameSlider.setValue(idx)
 
     def onExportVideo(self):
-        """Export animation frames as MP4 video with slice montage."""
+        """Export animation frames as MP4 video."""
         self._vizFrames = self._loadVizFrames()
         if not self._vizFrames:
             slicer.util.warningDisplay(
@@ -790,7 +1200,6 @@ class AmoraSimulationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             )
             return
 
-        # Ask user for save path
         savePath = qt.QFileDialog.getSaveFileName(
             slicer.util.mainWindow(),
             "Save Flow Animation",
@@ -804,71 +1213,79 @@ class AmoraSimulationWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         slicer.app.setOverrideCursor(qt.Qt.WaitCursor)
 
         try:
-            from PIL import Image
-            import matplotlib
+            try:
+                import matplotlib
+            except ImportError:
+                slicer.util.pip_install("matplotlib")
+                import matplotlib
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
-            import matplotlib.cm as cm
 
-            frames_pil = []
-            # Get global min/max for consistent colormap
-            sample = np.load(str(self._vizFrames[0]))
-            vmin_global = 0.0
+            geo = self._loadGeometry()
+            frames_np = []
             vmax_global = 0.0
             for f in self._vizFrames:
                 arr = np.load(str(f))
                 vmax_global = max(vmax_global, float(arr.max()))
 
+            sample = np.load(str(self._vizFrames[0]))
             nz = sample.shape[0]
-            # Pick 3 representative slices: 25%, 50%, 75% through volume
             slice_indices = [nz // 4, nz // 2, 3 * nz // 4]
 
             for fi, fpath in enumerate(self._vizFrames):
                 arr = np.load(str(fpath))
 
-                fig, axes = plt.subplots(1, 3, figsize=(12, 4), dpi=100)
+                fig, axes = plt.subplots(1, 3, figsize=(14, 4), dpi=120)
                 for ax, si in zip(axes, slice_indices):
+                    if geo is not None:
+                        ax.imshow(geo[si], cmap="gray", vmin=0, vmax=1, alpha=0.4)
+                    flow = np.ma.masked_where(arr[si] < vmax_global * 0.005, arr[si])
                     im = ax.imshow(
-                        arr[si], cmap="inferno",
-                        vmin=vmin_global, vmax=vmax_global,
+                        flow, cmap="inferno",
+                        vmin=0, vmax=vmax_global,
                         interpolation="bilinear",
                     )
-                    ax.set_title(f"Slice Z={si}", fontsize=10)
+                    ax.set_title(f"Z = {si}", fontsize=10)
                     ax.axis("off")
 
                 fig.suptitle(
-                    f"LBM Velocity Magnitude - Frame {fi + 1}/{len(self._vizFrames)}",
-                    fontsize=12, fontweight="bold",
+                    f"LBM Flow - Frame {fi + 1}/{len(self._vizFrames)}",
+                    fontsize=13, fontweight="bold",
                 )
                 fig.colorbar(im, ax=axes, shrink=0.8, label="Velocity (LU)")
                 fig.tight_layout()
 
-                # Render to PIL image
                 fig.canvas.draw()
                 w, h = fig.canvas.get_width_height()
                 buf = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8).reshape(h, w, 3)
-                frames_pil.append(Image.fromarray(buf))
+                frames_np.append(buf.copy())
                 plt.close(fig)
 
-            if not frames_pil:
+            if not frames_np:
                 self._logAppend("<span style='color:#ef4444;'>[ERROR] No frames rendered</span>")
                 return
 
             if savePath.endswith(".gif"):
-                frames_pil[0].save(
-                    savePath, save_all=True, append_images=frames_pil[1:],
-                    duration=int(1000 / self.fpsSpin.value), loop=0,
-                )
+                # Use matplotlib to save animated GIF (no PIL needed)
+                fig_anim, ax_anim = plt.subplots(figsize=(14, 4), dpi=120)
+                ax_anim.axis("off")
+                ims = []
+                from matplotlib.animation import ArtistAnimation
+                for buf in frames_np:
+                    im_art = ax_anim.imshow(buf)
+                    ims.append([im_art])
+                anim = ArtistAnimation(fig_anim, ims, interval=int(1000 / self.fpsSpin.value))
+                anim.save(savePath, writer="pillow")
+                plt.close(fig_anim)
             else:
-                # MP4 via imageio
                 try:
                     import imageio
                 except ImportError:
                     slicer.util.pip_install("imageio[ffmpeg]")
                     import imageio
                 writer = imageio.get_writer(savePath, fps=self.fpsSpin.value)
-                for frame in frames_pil:
-                    writer.append_data(np.array(frame))
+                for frame in frames_np:
+                    writer.append_data(frame)
                 writer.close()
 
             self._logAppend(

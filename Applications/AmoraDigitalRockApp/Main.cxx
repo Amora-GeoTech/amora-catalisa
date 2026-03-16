@@ -25,6 +25,10 @@
 #include "vtkSlicerConfigure.h" // For Slicer_MAIN_PROJECT_APPLICATION_NAME
 #include "vtkSlicerVersionConfigure.h" // For Slicer_MAIN_PROJECT_VERSION_FULL
 
+// Qt includes
+#include <QSplashScreen>
+#include <QTimer>
+
 namespace
 {
 
@@ -51,6 +55,23 @@ int SlicerAppMain(int argc, char* argv[])
     {
     QString windowTitle = QString("%1 %2").arg(Slicer_MAIN_PROJECT_APPLICATION_DISPLAY_NAME).arg(Slicer_MAIN_PROJECT_VERSION_FULL);
     window->setWindowTitle(windowTitle);
+    }
+
+  // Ensure splash screen is dismissed after the main window is fully shown.
+  // The Slicer helper calls splashScreen->close() before window->show(),
+  // which can leave the splash visible on Windows. Using finish() after the
+  // event loop starts guarantees it closes once the main window is displayed.
+  if (!splashScreen.isNull())
+    {
+    QWidget* mainWindow = window.data();
+    QSplashScreen* splash = splashScreen.data();
+    QTimer::singleShot(0, [splash, mainWindow]()
+      {
+      if (splash->isVisible())
+        {
+        splash->finish(mainWindow);
+        }
+      });
     }
 
   return app.exec();

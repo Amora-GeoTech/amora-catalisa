@@ -19,6 +19,7 @@ import numpy as np
 
 import qt
 import ctk
+import vtk
 import slicer
 from slicer.ScriptedLoadableModule import (
     ScriptedLoadableModule,
@@ -38,7 +39,7 @@ class AmoraProcessing(ScriptedLoadableModule):
     def __init__(self, parent: Optional[qt.QWidget]):
         ScriptedLoadableModule.__init__(self, parent)
         self.parent.title = "Processing"
-        self.parent.categories = ["AMORA"]
+        self.parent.categories = [""]
         self.parent.dependencies = []
         self.parent.contributors = [
             "LPSA/UFPA - Laboratorio de Petrossismica Sustentavel da Amazonia"
@@ -78,24 +79,73 @@ class AmoraProcessingWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         segCollapsible = ctk.ctkCollapsibleButton()
         segCollapsible.text = "Segmentation"
         self.layout.addWidget(segCollapsible)
-        segLayout = qt.QVBoxLayout(segCollapsible)
+        segLayout = qt.QFormLayout(segCollapsible)
 
         self.histBtn = qt.QPushButton("Compute Histogram")
         self.histBtn.setToolTip("Compute and display the histogram of the loaded volume")
         self.histBtn.clicked.connect(self.onComputeHistogram)
-        segLayout.addWidget(self.histBtn)
+        segLayout.addRow("", self.histBtn)
 
-        self.otsuBtn = qt.QPushButton("Otsu Segmentation")
-        self.otsuBtn.setToolTip("Apply Otsu thresholding for automatic binarization")
-        self.otsuBtn.clicked.connect(self.onOtsuSegmentation)
-        segLayout.addWidget(self.otsuBtn)
+        # Method selection
+        self.segMethodCombo = qt.QComboBox()
+        self.segMethodCombo.addItems([
+            "Otsu (binary: pore vs solid)",
+            "Multi-Otsu (3 classes)",
+            "Multi-Otsu (4 classes)",
+            "Hysteresis (noise-robust)",
+        ])
+        self.segMethodCombo.currentIndexChanged.connect(self._onSegMethodChanged)
+        segLayout.addRow("Method:", self.segMethodCombo)
+
+        # Hysteresis params (hidden by default)
+        self.hystWidget = qt.QWidget()
+        hystLayout = qt.QFormLayout(self.hystWidget)
+        hystLayout.setContentsMargins(0, 0, 0, 0)
+        self.hystLowSpin = qt.QDoubleSpinBox()
+        self.hystLowSpin.setRange(0.0, 1.0)
+        self.hystLowSpin.setValue(0.3)
+        self.hystLowSpin.setDecimals(2)
+        self.hystLowSpin.setSingleStep(0.05)
+        self.hystLowSpin.setToolTip("Low threshold fraction (0-1). Voxels above this are candidates.")
+        hystLayout.addRow("Low fraction:", self.hystLowSpin)
+        self.hystHighSpin = qt.QDoubleSpinBox()
+        self.hystHighSpin.setRange(0.0, 1.0)
+        self.hystHighSpin.setValue(0.7)
+        self.hystHighSpin.setDecimals(2)
+        self.hystHighSpin.setSingleStep(0.05)
+        self.hystHighSpin.setToolTip("High threshold fraction (0-1). Seeds for connected regions.")
+        hystLayout.addRow("High fraction:", self.hystHighSpin)
+        self.hystWidget.setVisible(False)
+        segLayout.addRow("", self.hystWidget)
+
+        # Auto-load result
+        self.autoLoadCheck = qt.QCheckBox("Auto-load result into Slicer")
+        self.autoLoadCheck.checked = True
+        segLayout.addRow("", self.autoLoadCheck)
+
+        # Save location (folder)
+        self.segSavePath = ctk.ctkPathLineEdit()
+        self.segSavePath.filters = ctk.ctkPathLineEdit.Dirs
+        self.segSavePath.setToolTip("Select folder to save segmented volume (leave empty for temp dir)")
+        segLayout.addRow("Save folder:", self.segSavePath)
+
+        # Run button
+        self.segRunBtn = qt.QPushButton("Run Segmentation")
+        self.segRunBtn.setToolTip("Run the selected segmentation method")
+        self.segRunBtn.setStyleSheet(
+            "font-weight: bold; padding: 8px; "
+            "background-color: #1e3a5f; color: #60a5fa; "
+            "border: 1px solid #60a5fa; border-radius: 6px;"
+        )
+        self.segRunBtn.clicked.connect(self.onRunSegmentation)
+        segLayout.addRow("", self.segRunBtn)
 
         self.applyWLBtn = qt.QPushButton("Apply Window/Level to Volume")
         self.applyWLBtn.setToolTip(
             "Make the current brightness/contrast (Window/Level) permanent on the volume data"
         )
         self.applyWLBtn.clicked.connect(self.onApplyWindowLevel)
-        segLayout.addWidget(self.applyWLBtn)
+        segLayout.addRow("", self.applyWLBtn)
 
         # --- Regions of Interest ---
         roiCollapsible = ctk.ctkCollapsibleButton()
@@ -209,7 +259,7 @@ class AmoraProcessingWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     def _setButtonsEnabled(self, enabled):
         self.progressBar.setVisible(not enabled)
-        for btn in [self.histBtn, self.otsuBtn, self.applyWLBtn,
+        for btn in [self.histBtn, self.segRunBtn, self.applyWLBtn,
                      self.genRoisBtn, self.plotRoiBtn, self.gifTensorBtn,
                      self.gifBinBtn, self.gifRoiBtn, self.clearRamBtn]:
             btn.setEnabled(enabled)
@@ -255,17 +305,26 @@ class AmoraProcessingWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             return
         txt = self._process.readAllStandardOutput().data().decode("utf-8", errors="ignore").strip()
         if txt:
-            try:
-                if txt.strip().startswith("{") and "ok" in txt:
-                    data = json.loads(txt)
-                    if "png" in data:
-                        self._logAppend(
-                            f"<span style='color:#22c55e;'>[RESULT] {data['png']}</span>"
-                        )
-                    return
-            except Exception:
-                pass
-            self._logAppend(txt)
+            for line in txt.split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    if line.startswith("{"):
+                        data = json.loads(line)
+                        if "png" in data:
+                            self._logAppend(
+                                f"<span style='color:#22c55e;'>[RESULT] {data['png']}</span>"
+                            )
+                        if data.get("ok") and "output" in data:
+                            self._lastSegResult = data
+                            self._logAppend(
+                                f"<span style='color:#22c55e;'>[SEG] {data.get('info', 'Done')}</span>"
+                            )
+                        continue
+                except Exception:
+                    pass
+                self._logAppend(line)
 
     def _onStderr(self):
         if not self._process:
@@ -277,11 +336,63 @@ class AmoraProcessingWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     def _onFinished(self, exitCode, exitStatus=None):
         if exitCode == 0:
             self._logAppend("<span style='color:#22c55e;'>[DONE] Success.</span>")
+            # Auto-load segmentation result if requested
+            if getattr(self, '_segAutoLoad', False) and hasattr(self, '_lastSegResult'):
+                self._autoLoadSegResult()
+                self._segAutoLoad = False
         else:
             self._logAppend(
                 f"<span style='color:#f59e0b;'>[DONE] Exit code {exitCode}</span>"
             )
         self._setButtonsEnabled(True)
+
+    def _autoLoadSegResult(self):
+        """Load segmentation result into Slicer as a new volume."""
+        data = getattr(self, '_lastSegResult', None)
+        if not data:
+            return
+        outPath = data.get("output", "")
+        if not outPath or not os.path.exists(outPath):
+            return
+
+        try:
+            arr = np.load(outPath)
+            nodeName = f"Segmented_{data.get('method', 'result')}"
+            volumeNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
+            volumeNode.SetName(nodeName)
+            slicer.util.updateVolumeFromArray(volumeNode, arr)
+
+            # Copy geometry from original volume if available
+            origNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
+            if origNode and origNode != volumeNode:
+                volumeNode.SetOrigin(origNode.GetOrigin())
+                volumeNode.SetSpacing(origNode.GetSpacing())
+                ijkToRas = vtk.vtkMatrix4x4()
+                origNode.GetIJKToRASMatrix(ijkToRas)
+                volumeNode.SetIJKToRASMatrix(ijkToRas)
+
+            displayNode = volumeNode.GetDisplayNode()
+            if displayNode:
+                nLabels = data.get("unique_labels", 2)
+                if nLabels <= 2:
+                    # Binary: grayscale with good contrast
+                    displayNode.SetAndObserveColorNodeID("vtkMRMLColorTableNodeGrey")
+                    displayNode.SetAutoWindowLevel(False)
+                    displayNode.SetWindow(1)
+                    displayNode.SetLevel(0.5)
+                else:
+                    # Multi-class: use label colormap
+                    displayNode.SetAndObserveColorNodeID("vtkMRMLColorTableNodeLabels")
+                    displayNode.SetAutoWindowLevel(True)
+
+            slicer.util.setSliceViewerLayers(background=volumeNode)
+            slicer.util.resetSliceViews()
+            self._logAppend(
+                f"<span style='color:#22c55e;'>[LOADED] {nodeName} "
+                f"({arr.shape}) into Slicer</span>"
+            )
+        except Exception as e:
+            self._logAppend(f"<span style='color:#ef4444;'>[ERROR] Auto-load: {e}</span>")
 
     # --- Processing Actions ---
 
@@ -293,14 +404,116 @@ class AmoraProcessingWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             )
             return
         self._logAppend("[RUN] Computing histogram...")
-        self._runScript("compute_histogram.py")
 
-    def onOtsuSegmentation(self):
+        try:
+            # Load data from cache
+            cachePath = os.path.join(tempfile.gettempdir(), "_tensor_cache.npy")
+            arr = np.load(cachePath, mmap_mode="r")
+            data = np.asarray(arr).ravel()
+
+            bins = 256
+            if np.issubdtype(data.dtype, np.integer):
+                bins = min(256, int(data.max() - data.min() + 1))
+                bins = max(bins, 2)
+
+            counts, edges = np.histogram(data, bins=bins)
+            centers = 0.5 * (edges[:-1] + edges[1:])
+
+            # Create table node with histogram data
+            tableNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode", "Histogram")
+            table = tableNode.GetTable()
+
+            arrX = vtk.vtkFloatArray()
+            arrX.SetName("Voxel Intensity")
+            arrX.SetNumberOfTuples(len(centers))
+            for i, v in enumerate(centers):
+                arrX.SetValue(i, float(v))
+            table.AddColumn(arrX)
+
+            arrY = vtk.vtkFloatArray()
+            arrY.SetName("Frequency")
+            arrY.SetNumberOfTuples(len(counts))
+            for i, v in enumerate(counts):
+                arrY.SetValue(i, float(v))
+            table.AddColumn(arrY)
+
+            # Create plot series
+            plotSeriesNode = slicer.mrmlScene.AddNewNodeByClass(
+                "vtkMRMLPlotSeriesNode", "Histogram"
+            )
+            plotSeriesNode.SetAndObserveTableNodeID(tableNode.GetID())
+            plotSeriesNode.SetXColumnName("Voxel Intensity")
+            plotSeriesNode.SetYColumnName("Frequency")
+            plotSeriesNode.SetPlotType(plotSeriesNode.PlotTypeLine)
+            plotSeriesNode.SetColor(0.2, 0.6, 1.0)
+
+            # Create plot chart
+            plotChartNode = slicer.mrmlScene.AddNewNodeByClass(
+                "vtkMRMLPlotChartNode", "Histogram"
+            )
+            plotChartNode.AddAndObservePlotSeriesNodeID(plotSeriesNode.GetID())
+            plotChartNode.SetTitle("Voxel Intensity Histogram")
+            plotChartNode.SetXAxisTitle("Intensity")
+            plotChartNode.SetYAxisTitle("Frequency")
+
+            # Show in plot view
+            layoutManager = slicer.app.layoutManager()
+            # Switch to a layout that includes the plot view
+            layoutManager.setLayout(
+                slicer.vtkMRMLLayoutNode.SlicerLayoutFourUpPlotView
+            )
+            plotWidget = layoutManager.plotWidget(0)
+            if plotWidget:
+                plotView = plotWidget.mrmlPlotViewNode()
+                plotView.SetPlotChartNodeID(plotChartNode.GetID())
+
+            self._logAppend(
+                f"<span style='color:#22c55e;'>[DONE] Histogram displayed in Plot view "
+                f"({len(centers)} bins, {data.size} voxels)</span>"
+            )
+        except Exception as e:
+            self._logAppend(
+                f"<span style='color:#ef4444;'>[ERROR] Histogram: {e}</span>"
+            )
+
+    def _onSegMethodChanged(self, idx):
+        """Show/hide hysteresis params based on selected method."""
+        self.hystWidget.setVisible(idx == 3)
+
+    def onRunSegmentation(self):
         if not self._cacheExists():
             slicer.util.warningDisplay("No data loaded.", windowTitle="AMORA")
             return
-        self._logAppend("[RUN] Otsu segmentation...")
-        self._runScript("segment_otsu.py")
+
+        methodIdx = self.segMethodCombo.currentIndex
+        args = []
+        if methodIdx == 0:
+            args = ["--method", "otsu"]
+            self._logAppend("[RUN] Otsu segmentation...")
+        elif methodIdx == 1:
+            args = ["--method", "multi_otsu", "--n-classes", "3"]
+            self._logAppend("[RUN] Multi-Otsu (3 classes)...")
+        elif methodIdx == 2:
+            args = ["--method", "multi_otsu", "--n-classes", "4"]
+            self._logAppend("[RUN] Multi-Otsu (4 classes)...")
+        elif methodIdx == 3:
+            args = [
+                "--method", "hysteresis",
+                "--low-frac", str(self.hystLowSpin.value),
+                "--high-frac", str(self.hystHighSpin.value),
+            ]
+            self._logAppend("[RUN] Hysteresis segmentation...")
+
+        # Custom output folder
+        saveFolder = self.segSavePath.currentPath
+        if saveFolder and os.path.isdir(saveFolder):
+            methodName = ["otsu", "multi_otsu_3", "multi_otsu_4", "hysteresis"][methodIdx]
+            outFile = os.path.join(saveFolder, f"segmented_{methodName}.npy")
+            args.extend(["--output", outFile])
+
+        # Auto-load flag
+        self._segAutoLoad = self.autoLoadCheck.checked
+        self._runScript("segment_otsu.py", args)
 
     def onApplyWindowLevel(self):
         """Make the current Window/Level adjustment permanent on the volume data."""

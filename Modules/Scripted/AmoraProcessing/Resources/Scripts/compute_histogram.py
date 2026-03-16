@@ -1,32 +1,34 @@
 #!/usr/bin/env python3
-# bridge_histogram.py
-import os, sys, argparse, json
+# compute_histogram.py
+import os, sys, argparse, json, tempfile
 import numpy as np
 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--basename", default="_tensor_cache.npy",
-                   help="nome do arquivo .npy no /dev/shm (ex.: _tensor_cache.npy, _tensor_bin.npy)")
+                   help="Name of the .npy file in temp dir")
     p.add_argument("--bins", type=int, default=256)
     p.add_argument("--logy", action="store_true")
     p.add_argument("--normalize", action="store_true")
     p.add_argument("--out", default="_histogram.png",
-                   help="nome do PNG de saída em /dev/shm")
+                   help="Output PNG filename in temp dir")
     args = p.parse_args()
 
-    import tempfile
-    base_dir = tempfile.gettempdir() if args.cache_mode == "ram" else "."
+    base_dir = tempfile.gettempdir()
+    src = os.path.join(base_dir, args.basename)
 
-    # carrega tensor (qualquer shape), flutua dtype p/ segurança
+    if not os.path.exists(src):
+        print(json.dumps({"error": f"Source not found: {src}"}))
+        return 2
+
+    # Load tensor, flatten for histogram
     arr = np.load(src, mmap_mode="r")
     data = np.asarray(arr).ravel()
 
-    # bins adequados ao dtype inteiro (ex.: uint8 => 256)
+    # Appropriate bins for integer dtypes
     bins = args.bins
     if np.issubdtype(data.dtype, np.integer):
-        info = np.iinfo(data.dtype)
-        # evita milhões de bins em dtypes largos:
-        bins = min(args.bins, max(32, 256))
+        bins = min(args.bins, 256)
 
     counts, edges = np.histogram(data, bins=bins)
     if args.normalize:
@@ -34,8 +36,7 @@ def main():
         if total > 0:
             counts = counts / total
 
-    # tenta gerar PNG com matplotlib; se não houver, salva CSV como fallback
-    out_png = os.path.join("/dev/shm", args.out)
+    out_png = os.path.join(base_dir, args.out)
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -44,11 +45,11 @@ def main():
         plt.figure()
         center = 0.5 * (edges[:-1] + edges[1:])
         plt.plot(center, counts)
-        plt.xlabel("Intensidade / valor do voxel")
-        plt.ylabel("Frequência" + (" (normalizada)" if args.normalize else ""))
+        plt.xlabel("Voxel Intensity")
+        plt.ylabel("Frequency" + (" (normalized)" if args.normalize else ""))
         if args.logy:
             plt.yscale("log")
-        plt.title(f"Histograma: {args.basename}")
+        plt.title(f"Histogram: {args.basename}")
         plt.tight_layout()
         plt.savefig(out_png, dpi=120)
         print(json.dumps({"ok": True, "png": out_png}), flush=True)

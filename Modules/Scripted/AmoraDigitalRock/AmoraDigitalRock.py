@@ -2,7 +2,7 @@
 AmoraDigitalRock - Digital Rock Analysis Tool
 ==================================================
 Volume loading, 2D slice browsing, and 3D rendering.
-Uses amora_io (ported from GeoSlicer's netcdf pipeline) for file I/O.
+Uses amora_io for file I/O.
 
 LPSA/UFPA - Laboratorio de Petrossismica Sustentavel da Amazonia
 """
@@ -37,7 +37,7 @@ class AmoraDigitalRock(ScriptedLoadableModule):
     def __init__(self, parent: Optional[qt.QWidget]):
         ScriptedLoadableModule.__init__(self, parent)
         self.parent.title = "Digital Rock"
-        self.parent.categories = ["AMORA"]
+        self.parent.categories = [""]
         self.parent.dependencies = []
         self.parent.contributors = [
             "LPSA/UFPA - Laboratorio de Petrossismica Sustentavel da Amazonia"
@@ -124,6 +124,25 @@ class AmoraDigitalRockWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.rawWidget.setVisible(False)
         loadLayout.addRow("", self.rawWidget)
 
+        # --- Projection Parameters (Hidden by default) ---
+        self.projWidget = qt.QWidget()
+        projLayout = qt.QFormLayout(self.projWidget)
+        projLayout.setContentsMargins(0, 0, 0, 0)
+
+        self.projInfoLabel = qt.QLabel("")
+        self.projInfoLabel.setWordWrap(True)
+        self.projInfoLabel.setStyleSheet("color: #60a5fa; font-size: 11px; padding: 4px;")
+        projLayout.addRow("", self.projInfoLabel)
+
+        self.projMaxSpin = qt.QSpinBox()
+        self.projMaxSpin.setRange(0, 100000)
+        self.projMaxSpin.setValue(0)
+        self.projMaxSpin.setToolTip("Max projections to load (0 = all). Use to limit memory.")
+        projLayout.addRow("Max projections:", self.projMaxSpin)
+
+        self.projWidget.setVisible(False)
+        loadLayout.addRow("", self.projWidget)
+
         # --- Load Button ---
         self.loadBtn = qt.QPushButton("Load Volume")
         self.loadBtn.setToolTip("Load the selected file or directory")
@@ -153,6 +172,31 @@ class AmoraDigitalRockWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         vizCollapsible.collapsed = True
         self.layout.addWidget(vizCollapsible)
         vizLayout = qt.QFormLayout(vizCollapsible)
+
+        # Colormap selector
+        self.cmapCombo = qt.QComboBox()
+        self._cmapEntries = [
+            ("Grey", "vtkMRMLColorTableNodeGrey"),
+            ("Viridis", "vtkMRMLColorTableNodeFileViridis.txt"),
+            ("Magma", "vtkMRMLColorTableNodeFileMagma.txt"),
+            ("Inferno", "vtkMRMLColorTableNodeFileInferno.txt"),
+            ("Plasma", "vtkMRMLColorTableNodeFilePlasma.txt"),
+            ("Warm 1", "vtkMRMLColorTableNodeWarm1"),
+            ("Warm 2", "vtkMRMLColorTableNodeWarm2"),
+            ("Cool 1", "vtkMRMLColorTableNodeCool1"),
+            ("Cool 2", "vtkMRMLColorTableNodeCool2"),
+            ("Rainbow", "vtkMRMLColorTableNodeRainbow"),
+            ("Ocean", "vtkMRMLColorTableNodeOcean"),
+            ("Red", "vtkMRMLColorTableNodeRed"),
+            ("Green", "vtkMRMLColorTableNodeGreen"),
+            ("Blue", "vtkMRMLColorTableNodeBlue"),
+            ("Yellow", "vtkMRMLColorTableNodeYellow"),
+            ("Hot to Cold Rainbow", "vtkMRMLColorTableNodeFileColdToHotRainbow.txt"),
+        ]
+        for name, _ in self._cmapEntries:
+            self.cmapCombo.addItem(name)
+        self.cmapCombo.currentIndexChanged.connect(self.onColormapChanged)
+        vizLayout.addRow("Colormap:", self.cmapCombo)
 
         self.planeCombo = qt.QComboBox()
         self.planeCombo.addItems([
@@ -214,6 +258,28 @@ class AmoraDigitalRockWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         is_raw = str(path).lower().endswith(".raw")
         self.rawWidget.setVisible(is_raw)
 
+        # Detect projection folder
+        is_proj = False
+        if path and os.path.isdir(path):
+            from AmoraDigitalRockLib.amora_io import _detect_projection_folder, _parse_geometry_yaml
+            detected = _detect_projection_folder(Path(path))
+            if detected is not None:
+                is_proj = True
+                proj_dir, geom_path, _ = detected
+                geom = _parse_geometry_yaml(geom_path)
+                n_det = geom.get('nDetector', [0, 0])
+                n_raw = len(list(proj_dir.glob("*.raw")))
+                mode = geom.get('mode', '?')
+                mem_gb = n_raw * n_det[0] * n_det[1] * 4 / (1024**3)
+                self.projInfoLabel.setText(
+                    f"CT Projections detected: {n_raw} files\n"
+                    f"Detector: {n_det[0]} x {n_det[1]}, Mode: {mode}\n"
+                    f"Estimated memory: {mem_gb:.1f} GB"
+                )
+        self.projWidget.setVisible(is_proj)
+        if is_proj:
+            self.rawWidget.setVisible(False)
+
     def onLoadClicked(self):
         filePath = self.fileSelector.currentPath
         if not filePath:
@@ -229,6 +295,10 @@ class AmoraDigitalRockWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         if self.rawWidget.visible:
             kwargs["shape"] = (self.rawDimZ.value, self.rawDimY.value, self.rawDimX.value)
             kwargs["dtype"] = self.rawDtype.currentText
+        if self.projWidget.visible:
+            max_proj = self.projMaxSpin.value
+            if max_proj > 0:
+                kwargs["max_projections"] = max_proj
 
         self.loadBtn.setEnabled(False)
         self.statusLabel.setText("Loading...")
@@ -313,6 +383,27 @@ class AmoraDigitalRockWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             f"Mean: {vmean:.4f}\n"
             f"Std: {vstd:.4f}"
         )
+
+        # Add CT projection info if available
+        ct_mode = volumeNode.GetAttribute("AMORA.ct_mode")
+        if ct_mode:
+            n_proj = volumeNode.GetAttribute("AMORA.nProjections") or "?"
+            n_det = volumeNode.GetAttribute("AMORA.nDetector") or "?"
+            dso = volumeNode.GetAttribute("AMORA.DSO") or "?"
+            dsd = volumeNode.GetAttribute("AMORA.DSD") or "?"
+            n_voxel = volumeNode.GetAttribute("AMORA.nVoxel") or "?"
+            d_voxel = volumeNode.GetAttribute("AMORA.dVoxel") or "?"
+            info += (
+                f"\n\n--- CT Acquisition ---\n"
+                f"Mode: {ct_mode}\n"
+                f"Projections: {n_proj}\n"
+                f"Detector: {n_det}\n"
+                f"DSO: {dso} mm\n"
+                f"DSD: {dsd} mm\n"
+                f"Recon voxels: {n_voxel}\n"
+                f"Voxel size: {d_voxel} mm"
+            )
+
         self.infoText.setPlainText(info)
 
     def _cacheForProcessing(self, volumeNode):
@@ -332,6 +423,16 @@ class AmoraDigitalRockWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             logging.warning(f"[AMORA] Cache failed: {e}")
 
     # --- Visualization ---
+
+    def onColormapChanged(self, index):
+        if not self._volumeNode:
+            return
+        if index < 0 or index >= len(self._cmapEntries):
+            return
+        _, colorNodeID = self._cmapEntries[index]
+        displayNode = self._volumeNode.GetDisplayNode()
+        if displayNode:
+            displayNode.SetAndObserveColorNodeID(colorNodeID)
 
     def onPlaneChanged(self, index):
         layouts = [
