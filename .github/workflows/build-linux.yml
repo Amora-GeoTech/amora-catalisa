@@ -55,7 +55,7 @@ jobs:
           free -h
 
       - name: Checkout AMORA source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install build dependencies
         run: |
@@ -158,7 +158,7 @@ jobs:
           ls -lh "$PKG"
 
       - name: Upload package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.find_package.outputs.package_name }}
           path: ${{ steps.find_package.outputs.package_path }}
